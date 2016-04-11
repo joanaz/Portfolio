@@ -1,8 +1,6 @@
-'use strict';
-
 // All used modules.
-var babel = require('gulp-babel');
 var gulp = require('gulp');
+var babel = require('gulp-babel');
 var runSeq = require('run-sequence');
 var plumber = require('gulp-plumber');
 var concat = require('gulp-concat');
@@ -17,6 +15,7 @@ var eslint = require('gulp-eslint');
 var mocha = require('gulp-mocha');
 var karma = require('karma').server;
 var istanbul = require('gulp-istanbul');
+var notify = require('gulp-notify');
 
 // Development tasks
 // --------------------------------------------------------------
@@ -33,6 +32,9 @@ gulp.task('reloadCSS', function () {
 gulp.task('lintJS', function () {
 
     return gulp.src(['./browser/js/**/*.js', './server/**/*.js'])
+        .pipe(plumber({
+            errorHandler: notify.onError('Linting FAILED! Check your gulp process.')
+        }))
         .pipe(eslint())
         .pipe(eslint.format())
         .pipe(eslint.failOnError());
@@ -44,13 +46,15 @@ gulp.task('buildJS', ['lintJS'], function () {
         .pipe(plumber())
         .pipe(sourcemaps.init())
         .pipe(concat('main.js'))
-        .pipe(babel())
+        .pipe(babel({
+            presets: ['es2015']
+        }))
         .pipe(sourcemaps.write())
         .pipe(gulp.dest('./public'));
 });
 
 gulp.task('testServerJS', function () {
-    require('babel/register');
+    require('babel-register');
 	return gulp.src('./tests/server/**/*.js', {
 		read: false
 	}).pipe(mocha({ reporter: 'spec' }));
@@ -81,36 +85,18 @@ gulp.task('testBrowserJS', function (done) {
 });
 
 gulp.task('buildCSS', function () {
+
+    var sassCompilation = sass();
+    sassCompilation.on('error', console.error.bind(console));
+
     return gulp.src('./browser/scss/main.scss')
-        .pipe(sass({
-            errLogToConsole: true
+        .pipe(plumber({
+            errorHandler: notify.onError('SASS processing failed! Check your gulp process.')
         }))
+        .pipe(sassCompilation)
         .pipe(rename('style.css'))
         .pipe(gulp.dest('./public'));
 });
-
-gulp.task('seedDB', function () {
-
-    var users = [
-        { email: 'testing@fsa.com', password: 'testing123' },
-        { email: 'joe@fsa.com', password: 'rainbowkicks' },
-        { email: 'obama@gmail.com', password: 'potus' }
-    ];
-
-    var dbConnected = require('./server/db');
-
-    return dbConnected.then(function () {
-        var User = require('mongoose').model('User');
-        return User.create(users);
-    }).then(function () {
-        process.kill(0);
-    }).catch(function (err) {
-        console.error(err);
-    });
-
-});
-
-// --------------------------------------------------------------
 
 // Production tasks
 // --------------------------------------------------------------
@@ -134,8 +120,6 @@ gulp.task('buildJSProduction', function () {
 
 gulp.task('buildProduction', ['buildCSSProduction', 'buildJSProduction']);
 
-// --------------------------------------------------------------
-
 // Composed tasks
 // --------------------------------------------------------------
 
@@ -149,13 +133,14 @@ gulp.task('build', function () {
 
 gulp.task('default', function () {
 
-    livereload.listen();
     gulp.start('build');
 
+    // Run when anything inside of browser/js changes.
     gulp.watch('browser/js/**', function () {
         runSeq('buildJS', 'reload');
     });
 
+    // Run when anything inside of browser/scss changes.
     gulp.watch('browser/scss/**', function () {
         runSeq('buildCSS', 'reloadCSS');
     });
@@ -170,5 +155,7 @@ gulp.task('default', function () {
 
     // Run browser testing when a browser test file changes.
     gulp.watch('tests/browser/**/*', ['testBrowserJS']);
+
+    livereload.listen();
 
 });
